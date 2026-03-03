@@ -1,10 +1,31 @@
+import streamlit as st
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime
-from sqlalchemy.orm import declarative_base, sessionmaker # อัปเดต Path นำเข้าสำหรับ SQLAlchemy 2.0
-from datetime import datetime, timezone
-from werkzeug.security import generate_password_hash, check_password_hash # เพิ่มระบบรักษาความปลอดภัยรหัสผ่าน
+from sqlalchemy.orm import declarative_base, sessionmaker
+from werkzeug.security import generate_password_hash, check_password_hash
+from datetime import datetime
 
-# --- 1. กำหนดโครงสร้างฐานข้อมูล (Database Schema) ---
+# ดึง URL จาก secrets
+try:
+    DATABASE_URL = st.secrets["SUPABASE_DB_URL"]
+except Exception as e:
+    st.error("⚠️ ไม่พบ DATABASE_URL ในไฟล์ secrets.toml")
+    DATABASE_URL = "sqlite:///fallback.db"
+
+# สร้าง Engine เชื่อมต่อกับ PostgreSQL บน Supabase
+engine = create_engine(DATABASE_URL)
+Session = sessionmaker(bind=engine)
 Base = declarative_base()
+
+# --- สร้างตาราง ---
+class User(Base):
+    __tablename__ = 'users'
+    id = Column(Integer, primary_key=True)
+    username = Column(String, unique=True, nullable=False)
+    password_hash = Column(String, nullable=False)
+    role = Column(String, default='admin')
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
 
 class Transaction(Base):
     __tablename__ = 'transactions'
@@ -13,89 +34,47 @@ class Transaction(Base):
     amount = Column(Float, nullable=False)
     merchant = Column(String, nullable=False)
     is_fraud = Column(String, nullable=False)
-    # อัปเดตการใช้เวลาให้รองรับ Python เวอร์ชันใหม่ (Timezone-aware)
-    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    timestamp = Column(DateTime, default=datetime.now)
 
-class User(Base):
-    __tablename__ = 'users'
-    id = Column(Integer, primary_key=True)
-    username = Column(String, unique=True, nullable=False) # Username ไม่ควรซ้ำกัน
-    password_hash = Column(String, nullable=False) # เปลี่ยนจาก password เป็น password_hash
-    role = Column(String, default="user")
-
-    # ฟังก์ชันช่วยตรวจสอบรหัสผ่าน
-    def check_password(self, password):
-        return check_password_hash(self.password_hash, password)
-
-# --- 2. เชื่อมต่อฐานข้อมูล (Database Connection) ---
-db_url = 'sqlite:///fraud_data_v2.db'
-# แนะนำให้เพิ่ม check_same_thread=False สำหรับ SQLite กรณีรันบน Streamlit
-engine = create_engine(db_url, connect_args={"check_same_thread": False})
+# สร้างตารางบน Cloud อัตโนมัติ (ถ้ายังไม่มี)
 Base.metadata.create_all(engine)
-Session = sessionmaker(bind=engine)
 
-# --- 3. สร้างฟังก์ชันสำหรับจัดการข้อมูล (Data Manipulation Functions) ---
-
+# --- ฟังก์ชันจัดการข้อมูล ---
 def add_transaction(customer_name, amount, merchant, is_fraud):
     with Session() as session:
-        try:
-            transaction = Transaction(
-                customer_name=customer_name, 
-                amount=amount, 
-                merchant=merchant, 
-                is_fraud=is_fraud
-            )
-            session.add(transaction)
-            session.commit()
-            return True
-        except Exception as e:
-            session.rollback() # ยกเลิกการบันทึกหากเกิดข้อผิดพลาด
-            print(f"Error adding transaction: {e}")
-            return False
+        new_tx = Transaction(
+            customer_name=customer_name,
+            amount=amount,
+            merchant=merchant,
+            is_fraud=is_fraud
+        )
+        session.add(new_tx)
+        session.commit()
+        return True
 
 def get_transactions():
     with Session() as session:
-        return session.query(Transaction).all()
-
-def get_user(username):
-    with Session() as session:
-        return session.query(User).filter(User.username == username).first()
-
-def add_user(username, password, role="user"):
-    with Session() as session:
-        try:
-            # ตรวจสอบก่อนว่ามี User นี้อยู่แล้วหรือไม่
-            existing_user = session.query(User).filter(User.username == username).first()
-            if existing_user:
-                return False # ไม่สร้างซ้ำ
-
-            # เข้ารหัสผ่านก่อนบันทึก
-            hashed_pw = generate_password_hash(password)
-            user = User(username=username, password_hash=hashed_pw, role=role)
-            
-            session.add(user)
-            session.commit()
-            return True
-        except Exception as e:
-            session.rollback()
-            print(f"Error adding user: {e}")
-            return False
+        return session.query(Transaction).order_by(Transaction.id.desc()).all()
 
 def delete_transaction(tx_id):
     with Session() as session:
-        try:
-            tx_to_delete = session.query(Transaction).filter(Transaction.id == tx_id).first()
-            if tx_to_delete:
-                session.delete(tx_to_delete)
-                session.commit()
-                return True
-            return False
-        except Exception as e:
-            session.rollback()
-            print(f"Error deleting transaction: {e}")
-            return False
+        tx = session.query(Transaction).filter_by(id=tx_id).first()
+        if tx:
+            session.delete(tx)
+            session.commit()
+            return True
+        return False
 
-# --- Initial Setup (สำหรับสร้าง Admin เบื้องต้น) ---
-# คุณสามารถเอาคอมเมนต์ออกเพื่อรันสร้าง Admin User ครั้งแรกได้
-# if not get_user("admin"):
-#     add_user("admin", "1234", "admin")
+def get_user(username):
+    with Session() as session:
+        return session.query(User).filter_by(username=username).first()
+
+def add_user(username, password, role="admin"):
+    with Session() as session:
+        if session.query(User).filter_by(username=username).first():
+            return False
+        hashed_pw = generate_password_hash(password)
+        new_user = User(username=username, password_hash=hashed_pw, role=role)
+        session.add(new_user)
+        session.commit()
+        return True

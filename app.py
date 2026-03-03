@@ -1,17 +1,10 @@
 import streamlit as st
 import pandas as pd
-from database_manager import get_transactions, add_transaction, delete_transaction
-from seed_data import seed_transactions
-
-# --- 0. การเตรียมข้อมูล (Seed Data) ---
-# เรียกใช้ทันทีที่รันแอป เพื่อให้มั่นใจว่าบน Cloud จะมีข้อมูลโชว์เสมอ
-try:
-    seed_transactions()
-except Exception as e:
-    pass # ข้ามหากมีปัญหาเพื่อไม่ให้แอปหยุดทำงาน
+# นำเข้า get_user เพิ่มเติมจาก database_manager
+from database_manager import get_transactions, add_transaction, delete_transaction, get_user
 
 # --- 1. การตั้งค่าหน้าเว็บและดีไซน์ (Modern UI) ---
-st.set_page_config(page_title="Fraud Guard Pro v2.0", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Fraud Guard Pro v3.0", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
@@ -25,8 +18,10 @@ st.markdown("""
 # --- 2. ระบบจัดการสถานะการเข้าสู่ระบบ ---
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
+if 'current_user' not in st.session_state:
+    st.session_state['current_user'] = ""
 
-# --- 3. หน้าจอ Login ---
+# --- 3. หน้าจอ Login (เชื่อมต่อ Supabase) ---
 if not st.session_state['logged_in']:
     _, col_login, _ = st.columns([1, 1.5, 1])
     with col_login:
@@ -40,27 +35,38 @@ if not st.session_state['logged_in']:
             pw = st.text_input("Password", type="password", placeholder="••••")
             
             if st.button("Sign In", type="primary"):
-                if user == "admin" and pw == "1234":
-                    st.session_state['logged_in'] = True
-                    st.rerun()
+                if user and pw:
+                    with st.spinner("กำลังตรวจสอบข้อมูล..."):
+                        # 1. ดึงข้อมูล User จาก Supabase
+                        user_record = get_user(user)
+                        
+                        # 2. ตรวจสอบว่ามี User นี้ และรหัสผ่านตรงกัน (เช็ก Hash)
+                        if user_record and user_record.check_password(pw):
+                            st.session_state['logged_in'] = True
+                            st.session_state['current_user'] = user_record.username
+                            st.rerun()
+                        else:
+                            st.error("❌ Username หรือ Password ไม่ถูกต้อง")
                 else:
-                    st.error("❌ Username หรือ Password ไม่ถูกต้อง")
+                    st.warning("⚠️ กรุณากรอก Username และ Password")
 
 # --- 4. หน้าจอหลัก (เมื่อ Login สำเร็จ) ---
 else:
     with st.sidebar:
         st.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=70)
         st.subheader("Admin Control")
-        st.success("สถานะ: เชื่อมต่อฐานข้อมูลแล้ว")
+        st.success("สถานะ: เชื่อมต่อ Supabase แล้ว ☁️")
+        st.write(f"👤 ผู้ใช้งาน: **{st.session_state['current_user']}**")
         st.divider()
         if st.button("🚪 Log Out", type="secondary"):
             st.session_state['logged_in'] = False
+            st.session_state['current_user'] = ""
             st.rerun()
 
     st.title("💳 Credit Card Fraud Analytics & Management")
     st.write("Dashboard สำหรับตรวจสอบและจัดการรายการทุจริตแบบ End-to-End")
 
-    # --- ดึงข้อมูลจากฐานข้อมูล ---
+    # --- ดึงข้อมูลจากฐานข้อมูล Supabase ---
     try:
         transactions = get_transactions()
         df = pd.DataFrame([
@@ -86,7 +92,7 @@ else:
         
         c4.metric("Avg. Transaction", f"฿{df['Amount'].mean():,.0f}")
     else:
-        st.info("💡 ระบบกำลังเตรียมข้อมูลเริ่มต้น...")
+        st.info("💡 ระบบกำลังรอข้อมูลธุรกรรมใหม่...")
         
     st.divider()
 
@@ -122,12 +128,12 @@ else:
 
             if st.button("💾 บันทึกลงฐานข้อมูล", type="primary"):
                 if name.strip() and merch.strip() and amt > 0:
-                    try:
-                        add_transaction(name, amt, merch, fraud_final)
-                        st.toast("บันทึกข้อมูลสำเร็จ!", icon="✅")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"บันทึกข้อมูลล้มเหลว: {e}")
+                    with st.spinner("กำลังบันทึกขึ้น Cloud..."):
+                        if add_transaction(name, amt, merch, fraud_final):
+                            st.toast("บันทึกข้อมูลสำเร็จ!", icon="✅")
+                            st.rerun()
+                        else:
+                            st.error("บันทึกข้อมูลล้มเหลว กรุณาลองใหม่")
                 else:
                     st.warning("กรุณากรอกข้อมูลให้ครบถ้วน")
 
@@ -142,11 +148,11 @@ else:
             st.write("")
             if st.button("🗑️ ยืนยันการลบ", type="primary"):
                 if not df.empty and del_id in df['ID'].values:
-                    try:
-                        delete_transaction(del_id)
-                        st.toast(f"ลบข้อมูล ID {del_id} สำเร็จ!", icon="🗑️")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"ลบข้อมูลล้มเหลว: {e}")
+                    with st.spinner("กำลังลบข้อมูล..."):
+                        if delete_transaction(del_id):
+                            st.toast(f"ลบข้อมูล ID {del_id} สำเร็จ!", icon="🗑️")
+                            st.rerun()
+                        else:
+                            st.error("ลบข้อมูลล้มเหลว")
                 else:
                     st.error(f"ไม่พบข้อมูล ID {del_id}")
