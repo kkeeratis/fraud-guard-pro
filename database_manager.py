@@ -4,19 +4,25 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
 
-# ดึง URL จาก secrets
+# 1. ดึง URL จาก secrets
 try:
     DATABASE_URL = st.secrets["SUPABASE_DB_URL"]
 except Exception as e:
     st.error("⚠️ ไม่พบ DATABASE_URL ในไฟล์ secrets.toml")
     DATABASE_URL = "sqlite:///fallback.db"
 
-# สร้าง Engine เชื่อมต่อกับ PostgreSQL บน Supabase
-engine = create_engine(DATABASE_URL)
+# 2. สร้าง Engine เพียงครั้งเดียวพร้อมตั้งค่า SSL ให้รองรับ Cloud
+# การเพิ่ม sslmode=require สำคัญมากสำหรับ Supabase
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"sslmode": "require"},
+    pool_pre_ping=True  # ช่วยเช็กการเชื่อมต่อก่อนดึงข้อมูล ป้องกันปัญหาเน็ตหลุด
+)
+
 Session = sessionmaker(bind=engine)
 Base = declarative_base()
 
-# --- สร้างตาราง ---
+# --- 3. โครงสร้างตาราง ---
 class User(Base):
     __tablename__ = 'users'
     id = Column(Integer, primary_key=True)
@@ -36,10 +42,13 @@ class Transaction(Base):
     is_fraud = Column(String, nullable=False)
     timestamp = Column(DateTime, default=datetime.now)
 
-# สร้างตารางบน Cloud อัตโนมัติ (ถ้ายังไม่มี)
-Base.metadata.create_all(engine)
+# 4. สร้างตารางบน Cloud อัตโนมัติ (ขยับมาไว้ตรงนี้เพื่อให้ใช้ engine ที่มี SSL)
+try:
+    Base.metadata.create_all(engine)
+except Exception as e:
+    st.warning(f"⚠️ ระบบสร้างตารางอัตโนมัติพบปัญหา (อาจมีตารางอยู่แล้ว): {e}")
 
-# --- ฟังก์ชันจัดการข้อมูล ---
+# --- 5. ฟังก์ชันจัดการข้อมูล (เหมือนเดิม) ---
 def add_transaction(customer_name, amount, merchant, is_fraud):
     with Session() as session:
         new_tx = Transaction(
@@ -78,7 +87,3 @@ def add_user(username, password, role="admin"):
         session.add(new_user)
         session.commit()
         return True
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"sslmode": "require"}
-)
