@@ -78,3 +78,7 @@ def add_user(username, password, role="admin"):
         session.add(new_user)
         session.commit()
         return True
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"sslmode": "require"}
+)
