@@ -1,41 +1,41 @@
-import sqlite3
+from database_manager import Session, Transaction, add_user
 import random
 from datetime import datetime, timedelta
 
-# 1. เชื่อมต่อฐานข้อมูล
-db_path = 'fraud_data_v2.db'
-conn = sqlite3.connect(db_path)
-cursor = conn.cursor()
+def seed_transactions():
+    session = Session()
+    # ตรวจสอบก่อนว่ามีข้อมูลอยู่แล้วหรือยัง เพื่อไม่ให้สร้างซ้ำ
+    if session.query(Transaction).count() > 0:
+        print("Database already has data. Skipping seeding.")
+        session.close()
+        return
 
-# รายชื่อร้านค้าและชื่อลูกค้าจำลอง
-merchants = ['BigC', 'Lotus', 'Apple Store', '7-Eleven', 'Shell Station', 'Lazada', 'Shopee', 'Amazon Cafe', 'GrabFood']
-customers = ['Somsak', 'Wichai', 'Ananda', 'Preecha', 'Siriwan', 'Malee', 'Kanya', 'Jittra', 'Natapong']
-
-print("กำลังเริ่มปั๊มข้อมูลจำลอง 50 รายการ...")
-
-# 2. วนลูปสร้างข้อมูล 50 ครั้ง
-for i in range(50):
-    cust_name = random.choice(customers)
-    merch = random.choice(merchants)
+    customers = ["Somsak", "Wichai", "Keerati", "Anong", "Preecha", "Aekkachai"]
+    merchants = ["Apple Store", "7-Eleven", "Gold Shop", "Starbucks", "Casino", "BigC"]
     
-    # สุ่มยอดเงิน (ระหว่าง 100 ถึง 50,000 บาท)
-    amt = round(random.uniform(100.0, 50000.0), 2)
+    # สร้างข้อมูลจำลอง 20 รายการ
+    for i in range(20):
+        name = random.choice(customers)
+        merch = random.choice(merchants)
+        amt = random.uniform(500, 60000)
+        
+        # กฎจำลอง: ถ้าซื้อที่ Casino หรือยอด > 45000 ให้เป็น Fraud (ตาม Rule-based ของเรา)
+        is_fraud = "Yes" if (amt > 45000 or merch in ["Casino", "Gold Shop"]) else "No"
+        
+        new_tx = Transaction(
+            customer_name=name,
+            amount=round(amt, 2),
+            merchant=merch,
+            is_fraud=is_fraud,
+            timestamp=datetime.now() - timedelta(days=random.randint(0, 30))
+        )
+        session.add(new_tx)
     
-    # สุ่มสถานะทุจริต (ให้มีโอกาสทุจริตประมาณ 20% เพื่อความสมจริง)
-    is_fraud = 'Yes' if random.random() < 0.2 else 'No'
-    
-    # สุ่มวันที่ย้อนหลัง (ภายใน 30 วันที่ผ่านมา)
-    random_days = random.randint(0, 30)
-    timestamp = datetime.now() - timedelta(days=random_days)
+    session.commit()
+    session.close()
+    print("Seeding completed!")
 
-    # 3. ใช้คำสั่ง SQL INSERT เพื่อเพิ่มข้อมูล
-    cursor.execute('''
-        INSERT INTO transactions (customer_name, amount, merchant, is_fraud, timestamp)
-        VALUES (?, ?, ?, ?, ?)
-    ''', (cust_name, amt, merch, is_fraud, timestamp))
-
-# 4. บันทึกและปิดการเชื่อมต่อ
-conn.commit()
-conn.close()
-
-print("✅ ปั๊มข้อมูลจำลองสำเร็จ! ตอนนี้ฐานข้อมูลของคุณมีข้อมูลเพิ่มขึ้นอีก 50 รายการแล้ว")
+if __name__ == "__main__":
+    seed_transactions()
+    # สร้าง user admin เริ่มต้นด้วย
+    add_user("admin", "1234", "admin")

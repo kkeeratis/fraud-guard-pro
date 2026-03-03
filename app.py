@@ -1,7 +1,14 @@
 import streamlit as st
 import pandas as pd
-# สมมติฐานว่า database_manager มีการใช้ Parameterized Query เพื่อป้องกัน SQL Injection แล้ว
 from database_manager import get_transactions, add_transaction, delete_transaction
+from seed_data import seed_transactions
+
+# --- 0. การเตรียมข้อมูล (Seed Data) ---
+# เรียกใช้ทันทีที่รันแอป เพื่อให้มั่นใจว่าบน Cloud จะมีข้อมูลโชว์เสมอ
+try:
+    seed_transactions()
+except Exception as e:
+    pass # ข้ามหากมีปัญหาเพื่อไม่ให้แอปหยุดทำงาน
 
 # --- 1. การตั้งค่าหน้าเว็บและดีไซน์ (Modern UI) ---
 st.set_page_config(page_title="Fraud Guard Pro v2.0", layout="wide", initial_sidebar_state="expanded")
@@ -15,7 +22,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. ระบบจัดการสถานะการเข้าสู่ระบบ (Session State) ---
+# --- 2. ระบบจัดการสถานะการเข้าสู่ระบบ ---
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 
@@ -33,8 +40,6 @@ if not st.session_state['logged_in']:
             pw = st.text_input("Password", type="password", placeholder="••••")
             
             if st.button("Sign In", type="primary"):
-                # แนะนำให้เปลี่ยนไปใช้ st.secrets ในอนาคต เช่น st.secrets["admin_password"]
-                # แต่สำหรับทดสอบระบบเบื้องต้น ใช้แบบนี้ไปก่อนได้ครับ
                 if user == "admin" and pw == "1234":
                     st.session_state['logged_in'] = True
                     st.rerun()
@@ -55,7 +60,7 @@ else:
     st.title("💳 Credit Card Fraud Analytics & Management")
     st.write("Dashboard สำหรับตรวจสอบและจัดการรายการทุจริตแบบ End-to-End")
 
-    # --- ดึงข้อมูลจากฐานข้อมูล (พร้อม Error Handling) ---
+    # --- ดึงข้อมูลจากฐานข้อมูล ---
     try:
         transactions = get_transactions()
         df = pd.DataFrame([
@@ -74,7 +79,6 @@ else:
         c1.metric("Total Transactions", f"{len(df):,} รายการ")
         c2.metric("Total Volume", f"฿{df['Amount'].sum():,.2f}")
         
-        # ป้องกัน error กรณีไม่มีคอลัมน์ Fraud
         if 'Fraud' in df.columns:
             fraud_count = len(df[df['Fraud'] == 'Yes'])
             fraud_pct = (fraud_count / len(df) * 100) if len(df) > 0 else 0
@@ -82,20 +86,18 @@ else:
         
         c4.metric("Avg. Transaction", f"฿{df['Amount'].mean():,.0f}")
     else:
-        st.info("💡 ยังไม่มีข้อมูลการทำธุรกรรมในระบบ")
+        st.info("💡 ระบบกำลังเตรียมข้อมูลเริ่มต้น...")
         
     st.divider()
 
-    # --- ส่วนที่ 2: Tabs สำหรับแยกฟังก์ชันการทำงาน ---
+    # --- ส่วนที่ 2: Tabs ฟังก์ชันการทำงาน ---
     tab_log, tab_add, tab_manage = st.tabs(["📋 Transaction Log", "➕ New Entry", "⚙️ Data Management"])
 
-    # Tab 1: Log
     with tab_log:
         st.subheader("Data Explorer")
         if not df.empty:
             st.dataframe(df, use_container_width=True, hide_index=True)
 
-    # Tab 2: Add (เอาออกจาก st.form เพื่อให้ระบบ Rule-based ทำงานแบบ Real-time)
     with tab_add:
         st.subheader("Add New Transaction")
         with st.container(border=True):
@@ -105,11 +107,9 @@ else:
                 amt = st.number_input("ยอดเงิน (บาท)", min_value=0.0, step=100.0)
             with col_b:
                 merch = st.text_input("ชื่อร้านค้า")
-                
-            # --- ระบบตรวจจับอัตโนมัติ (Automated Rules) ---
+            
             risk_suggested = "No"
             risk_label = "✅ ปกติ"
-            
             if amt > 45000:
                 risk_suggested = "Yes"
                 risk_label = "🚨 เสี่ยง: ยอดเงินสูงผิดปกติ"
@@ -117,9 +117,7 @@ else:
                 risk_suggested = "Yes"
                 risk_label = "🚨 เสี่ยง: ร้านค้าความเสี่ยงสูง"
             
-            st.markdown(f"**การวิเคราะห์ระบบ (Real-time):** <span style='color:{'red' if risk_suggested == 'Yes' else 'green'}'>{risk_label}</span>", unsafe_allow_html=True)
-            
-            # Selectbox จะอัปเดตค่าเริ่มต้นตามความเสี่ยงโดยอัตโนมัติ
+            st.markdown(f"**การวิเคราะห์ระบบ:** <span style='color:{'red' if risk_suggested == 'Yes' else 'green'}'>{risk_label}</span>", unsafe_allow_html=True)
             fraud_final = st.selectbox("ยืนยันสถานะ", ["No", "Yes"], index=(0 if risk_suggested == "No" else 1))
 
             if st.button("💾 บันทึกลงฐานข้อมูล", type="primary"):
@@ -127,24 +125,22 @@ else:
                     try:
                         add_transaction(name, amt, merch, fraud_final)
                         st.toast("บันทึกข้อมูลสำเร็จ!", icon="✅")
-                        st.rerun() # รีเฟรชหน้าเพื่อดึงข้อมูลใหม่
+                        st.rerun()
                     except Exception as e:
                         st.error(f"บันทึกข้อมูลล้มเหลว: {e}")
                 else:
-                    st.warning("กรุณากรอกข้อมูลให้ครบถ้วนและถูกต้องก่อนบันทึก")
+                    st.warning("กรุณากรอกข้อมูลให้ครบถ้วน")
 
-    # Tab 3: Manage
     with tab_manage:
         st.subheader("Danger Zone")
-        st.write("ลบข้อมูลที่ระบุ ID ผิดพลาดออกจากฐานข้อมูล")
-        
+        st.write("ลบข้อมูลออกจากฐานข้อมูล")
         col_id, col_btn = st.columns([1, 2])
         with col_id:
-            del_id = st.number_input("ใส่ Transaction ID ที่ต้องการลบ", min_value=1, step=1)
+            del_id = st.number_input("ใส่ ID ที่ต้องการลบ", min_value=1, step=1)
         with col_btn:
             st.write("") 
             st.write("")
-            if st.button("🗑️ ยืนยันการลบ", type="primary", use_container_width=False):
+            if st.button("🗑️ ยืนยันการลบ", type="primary"):
                 if not df.empty and del_id in df['ID'].values:
                     try:
                         delete_transaction(del_id)
@@ -153,4 +149,4 @@ else:
                     except Exception as e:
                         st.error(f"ลบข้อมูลล้มเหลว: {e}")
                 else:
-                    st.error(f"ไม่พบข้อมูล ID {del_id} ในระบบ")
+                    st.error(f"ไม่พบข้อมูล ID {del_id}")
