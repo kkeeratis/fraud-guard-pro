@@ -10,10 +10,8 @@ from werkzeug.security import generate_password_hash, check_password_hash
 try:
     DATABASE_URL = st.secrets["DATABASE_URL"]
 except Exception:
-    # ระบบสำรองเผื่อหาไฟล์ secrets.toml ไม่เจอ
     DATABASE_URL = "sqlite:///fraud_guard_pro_final.db"
 
-# pool_pre_ping ช่วยรักษาการเชื่อมต่อไม่ให้หลุดเวลาทิ้งแอปไว้นานๆ
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 Session = sessionmaker(bind=engine)
 Base = declarative_base()
@@ -33,7 +31,6 @@ class Transaction(Base):
     id = Column(Integer, primary_key=True)
     customer_name = Column(String, nullable=False)
     
-    # มิติข้อมูลสำหรับนำไปวิเคราะห์ใน Power BI
     gender = Column(String, nullable=True)
     city = Column(String, nullable=True)
     job = Column(String, nullable=True)
@@ -44,7 +41,7 @@ class Transaction(Base):
     is_fraud = Column(String, nullable=False)
     timestamp = Column(DateTime, default=datetime.now)
 
-# --- 3. ระบบอัปโหลดข้อมูล (Bulk Insert เร็วปรื๊ด!) ---
+# --- 3. ระบบอัปโหลดข้อมูล (Bulk Insert) ---
 def seed_initial_data(session):
     if session.query(Transaction).count() > 0:
         return
@@ -59,7 +56,7 @@ def seed_initial_data(session):
     
     try:
         df = pd.read_csv(csv_path).sample(n=1000, random_state=42)
-        bulk_data = [] # กล่องเก็บข้อมูลเตรียมส่งรอบเดียว
+        bulk_data = [] 
         
         for index, row in df.iterrows():
             fname = str(row.get('first', 'Unknown'))
@@ -81,7 +78,6 @@ def seed_initial_data(session):
             except:
                 tx_time = datetime.now()
             
-            # สร้าง Object ยัดลงกล่อง
             tx = Transaction(
                 customer_name=customer, gender=gender, city=city,
                 job=job, category=category, amount=amount,
@@ -89,7 +85,6 @@ def seed_initial_data(session):
             )
             bulk_data.append(tx)
             
-        # ส่งข้อมูลทั้งกล่องขึ้น Database ในคำสั่งเดียว (เร็วมาก)
         session.bulk_save_objects(bulk_data)
         session.commit()
         st.success("✅ อัปโหลด 1,000 รายการเสร็จสิ้น! พร้อมเชื่อมต่อ Power BI")
@@ -107,7 +102,7 @@ def init_db():
         seed_initial_data(session)
         session.commit()
 
-# --- 4. ฟังก์ชันจัดการข้อมูล (CRUD) ---
+# --- 4. ฟังก์ชันจัดการข้อมูล (CRUD) ปรับใหม่ให้รับข้อมูลครบทุกช่อง ---
 def get_user(username):
     with Session() as session:
         return session.query(User).filter_by(username=username).first()
@@ -116,18 +111,18 @@ def get_transactions():
     with Session() as session:
         return session.query(Transaction).order_by(Transaction.timestamp.desc()).all()
 
-def add_transaction(name, amount, merchant, category, is_fraud):
+def add_transaction(name, amount, merchant, category, is_fraud, gender, city, job):
     with Session() as session:
         new_tx = Transaction(
             customer_name=name, amount=amount, merchant=merchant, 
-            category=category, gender="Manual Entry", city="Manual Entry", 
-            job="Manual Entry", is_fraud=is_fraud
+            category=category, gender=gender, city=city, 
+            job=job, is_fraud=is_fraud
         )
         session.add(new_tx)
         session.commit()
         return True
 
-def update_transaction(tx_id, name, amount, merchant, category, is_fraud):
+def update_transaction(tx_id, name, amount, merchant, category, is_fraud, gender, city, job):
     with Session() as session:
         tx = session.query(Transaction).filter_by(id=tx_id).first()
         if tx:
@@ -136,6 +131,9 @@ def update_transaction(tx_id, name, amount, merchant, category, is_fraud):
             tx.merchant = merchant
             tx.category = category
             tx.is_fraud = is_fraud
+            tx.gender = gender
+            tx.city = city
+            tx.job = job
             session.commit()
             return True
         return False

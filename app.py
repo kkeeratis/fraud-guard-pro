@@ -72,7 +72,6 @@ else:
     # --- 4. Main Dashboard ---
     raw_data = get_transactions()
     
-    # แปลงข้อมูลเป็น DataFrame สำหรับแสดงผล
     df = pd.DataFrame([{
         "ID": t.id, 
         "Timestamp": t.timestamp.strftime("%Y-%m-%d %H:%M") if t.timestamp else "", 
@@ -121,6 +120,13 @@ else:
         with col_form:
             with st.container(border=True):
                 new_name = st.text_input("Customer Name")
+                
+                # เพิ่มฟิลด์ใหม่: เพศ, เมือง, อาชีพ
+                c_gen, c_city, c_job = st.columns(3)
+                new_gender = c_gen.selectbox("Gender", ["M", "F", "U"])
+                new_city = c_city.text_input("City", placeholder="e.g. Bangkok")
+                new_job = c_job.text_input("Job Title", placeholder="e.g. Data Analyst")
+                
                 new_amt = st.number_input("Transaction Amount (THB)", min_value=0.0, step=1000.0)
                 categories = ['misc_net', 'grocery_pos', 'entertainment', 'gas_transport', 'shopping_pos', 'grocery_net', 'shopping_net', 'misc_pos', 'travel']
                 new_cat = st.selectbox("Category Classification", categories)
@@ -129,7 +135,8 @@ else:
                 
                 if st.button("Save Transaction", type="primary", use_container_width=True):
                     if new_name and new_amt > 0 and new_merch:
-                        add_transaction(new_name, new_amt, new_merch, new_cat, new_status)
+                        # ส่งข้อมูลเข้า Database ครบทุกฟิลด์
+                        add_transaction(new_name, new_amt, new_merch, new_cat, new_status, new_gender, new_city, new_job)
                         st.success("Transaction recorded successfully!")
                         st.rerun()
                     else:
@@ -163,15 +170,24 @@ else:
                     c1, c2 = st.columns(2)
                     upd_name = c1.text_input("Customer Name", value=tx_data['Customer'])
                     upd_amt = c2.number_input("Amount (THB)", value=float(tx_data['Amount (THB)']))
-                    upd_merch = c1.text_input("Merchant", value=tx_data['Merchant'])
-                    upd_cat = c2.text_input("Category", value=tx_data['Category'])
-                    upd_status = c1.selectbox("Fraud Flag", ["No", "Yes"], index=0 if tx_data['Fraud Flag'] == "No" else 1)
+                    
+                    # ป้องกัน Error เวลาข้อมูลเก่าเป็นค่าแปลกๆ
+                    gen_options = ["M", "F", "U"]
+                    current_gen = tx_data['Gender'] if tx_data['Gender'] in gen_options else "U"
+                    
+                    upd_gender = c1.selectbox("Gender", gen_options, index=gen_options.index(current_gen))
+                    upd_city = c2.text_input("City", value=str(tx_data['City']) if pd.notna(tx_data['City']) else "")
+                    upd_job = c1.text_input("Job Title", value=str(tx_data['Job']) if pd.notna(tx_data['Job']) else "")
+                    
+                    upd_merch = c2.text_input("Merchant", value=tx_data['Merchant'])
+                    upd_cat = c1.text_input("Category", value=tx_data['Category'])
+                    upd_status = c2.selectbox("Fraud Flag", ["No", "Yes"], index=0 if tx_data['Fraud Flag'] == "No" else 1)
                     
                     st.write("<br>", unsafe_allow_html=True)
                     btn_upd, btn_del, _ = st.columns([1, 1, 2])
                     
                     if btn_upd.button("Update Record", type="primary", use_container_width=True):
-                        update_transaction(target_id, upd_name, upd_amt, upd_merch, upd_cat, upd_status)
+                        update_transaction(target_id, upd_name, upd_amt, upd_merch, upd_cat, upd_status, upd_gender, upd_city, upd_job)
                         st.success(f"Record updated!")
                         st.rerun()
                         
