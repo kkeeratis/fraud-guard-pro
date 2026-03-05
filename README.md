@@ -14,7 +14,7 @@
 
 - **Frontend:** Streamlit, Markdown/CSS
 - **Backend & Data Processing:** Python, Pandas
-- **Database:** SQLite3, SQLAlchemy (ORM)
+- **Database:** Neon PostgreSQL (Cloud), SQLAlchemy (ORM)
 - **Security:** Werkzeug (Password Hashing)
 
 ## 💻 How to Run This Project
