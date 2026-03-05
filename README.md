@@ -29,7 +29,7 @@
 
 3. **Run the Streamlit application:**
    ```bash
-   streamlit run app.py
+   py -m streamlit run app.py
    
 ## 📈 Future Enhancements (Roadmap)
 [ ] Data Visualization: Integrate Plotly/Matplotlib to visualize fraud trends, high-risk merchant distributions, and transaction volumes.
