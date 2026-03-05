@@ -12,10 +12,19 @@
 
 ## 🛠️ Tech Stack
 
-- **Frontend:** Streamlit, Markdown/CSS
-- **Backend & Data Processing:** Python, Pandas
-- **Database:** Neon PostgreSQL (Cloud), SQLAlchemy (ORM)
-- **Security:** Werkzeug (Password Hashing)
+- Frontend: Streamlit (Python), Markdown/CSS
+- Backend & Data Processing: Python, Pandas
+- Database: Neon PostgreSQL (Serverless Cloud Database)
+- ORM: SQLAlchemy for robust database interactions
+- Analytics: Power BI (DAX) for interactive executive dashboards
+- Security: Werkzeug (Password Hashing)
+- Deployment: Streamlit Community Cloud & GitHub
+
+## 📊 Analytics & BI
+- The system is integrated with a Power BI dashboard that provides:
+- Fraud Rate % Tracking: Real-time monitoring of fraud prevalence.
+- Demographic Analysis: Fraud distribution by Gender and City.
+- Loss Prevention Metrics: Calculation of potential financial impact from flagged transactions.
 
 ## 💻 How to Run This Project
 
